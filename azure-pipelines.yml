@@ -1,0 +1,88 @@
+parameters:
+- name: rgname
+  type: string
+  default: "test"
+- name: release 
+  type: string
+  default: "rel0403"
+- name: storageaccountname
+  type: string
+  default: "mytstaccount245"
+- name: location
+  type: string
+  default: "North Europe"
+- name: cdnprofile
+  type: string
+  default: "tstcdn"
+- name: env
+  type: string
+  default: "TST"
+
+trigger:
+  branches:
+    include:
+    - test
+
+schedules:
+- cron: "0 0 * * *"
+  displayName: Daily midnight build
+  branches:
+    include:
+    - tst
+    exclude:
+    - master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: AzureResourceManagerTemplateDeployment@3
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: '${{ parameters.rgname }}'
+    location: '$ {{ parameters.location }}'
+    templateLocation: 'Linked artifact'
+    csmFile: '$(Build.SourcesDirectory)/deploy/azure.sa.deploy.json'
+    overrideParameters: '-storageAccountName ${{ parameters.storageaccountname }} -containerName ${{ parameters.release }}'
+    deploymentMode: 'Incremental'
+
+- task: Bash@3
+  inputs:
+    filePath: '$(Build.SourcesDirectory)/build/build.sh'
+    arguments: '${{ parameters.env}} ${{ parameters.storageaccountname }}'
+- task: PublishPipelineArtifact@1
+  inputs:
+    path: $(System.DefaultWorkingDirectory)
+    artifact: BuildIndex
+- task: AzureCLI@1
+  inputs:
+    azureSubscription: 
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: 'az storage blob upload -f $(System.DefaultWorkingDirectory)/index.html -c ${{ parameters.release }} -n index.html --account-name ${{ parameters.storageaccountname }}'
+- task: AzureCLI@1
+  inputs:
+    azureSubscription: 
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: 'az storage blob upload-batch --destination ${{ parameters.release }} --source $(Build.SourcesDirectory)/source --account-name ${{ parameters.storageaccountname }}'
+- task: AzureResourceManagerTemplateDeployment@3
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 
+    subscriptionId:
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: '${{ parameters.rgname }}'
+    location: '${{ parameters.location }}'
+    templateLocation: 'Linked artifact'
+    csmFile: '$(Build.SourcesDirectory)/deploy/azure.cdn.deploy.json'
+    overrideParameters: '-storageAccountName ${{ parameters.storageaccountname}} -cdnProfileName ${{ parameters.cdnprofile }} -originPath /${{ parameters.release }}/'
+    deploymentMode: 'Incremental'
+- task: AzureCLI@1
+  inputs:
+    azureSubscription: 
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: 'az cdn endpoint purge -g ${{ parameters.rgname }} --profile-name ${{ parameters.cdnprofile}} --name ${{ parameters.storageaccountname }} --content-paths "/*"'
