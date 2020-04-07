@@ -22,6 +22,7 @@ Continous deployment is implemented storing every new release artefacts in a new
 6. Navigate to your CDN endpoint (https://cdn.azureedge.net/index.html) Should be getting page contents similar to:
 
 ![image Solution](./result.png)
+
 7. That's it. Good luck in your production scenarios!
 
 
